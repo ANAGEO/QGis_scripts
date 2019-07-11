@@ -86,3 +86,6 @@ if(conn):
     cur.close()
     conn.commit()
     conn.close()
+
+## cleaning up
+os.remove(csvfile)
