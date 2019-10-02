@@ -5,13 +5,11 @@
 ## because it might not be installed (by default, QGis doesn't); it uses xlrd instead of pandas, and psycopg2 for the connection to the server.
 ## It can be stored as a layer action or run from the python console.  And maybe as a processing toolbox script.
 
-## Since it is supposed to work from within QGis, it is asumed that there is already a live connection to postgresql,
-## and it would be a great improvement if the connection parameters could be retrieved automatically from it in order
-## to avoid to store them in the script.  Unfortunately the use of authentication configs in QGis makes it more difficult
-## than simply using QgsDataSourceUri() (username and password are missing), and I can't solve this.
+## Since it is supposed to work from within QGis, it is asumed that there is already a live connection to postgresql with stored
+## parameters, and we use here the QSettings to find them and retrieve the login and password without storing them in the script.
 
 __author__ = 'didier'
-__version__ = '0.5'
+__version__ = '0.6'
 
 import os, sys, psycopg2, csv, xlrd
 from PyQt5 import Qt
@@ -19,6 +17,37 @@ from qgis.gui import QgsMessageBar
 from PyQt5.QtWidgets import QFileDialog
 from qgis.core import *
 from qgis.utils import iface
+
+## Function to retrieve the login and password from a stored PostGIS connection 
+def get_postgres_conn_info(selected):
+    """ Read PostgreSQL connection details from QSettings stored by QGIS
+    """
+    settings = QSettings()
+    settings.beginGroup(u"/PostgreSQL/connections/" + selected)
+    if not settings.contains("database"): # non-existent entry?
+        return {}
+
+    conn_info = dict()
+    conn_info["host"] = settings.value("host", "", type=str)
+
+    # password and username
+    username = ''
+    password = ''
+    authconf = settings.value('authcfg', '')
+    if authconf :
+        # password encrypted in AuthManager
+        auth_manager = QgsApplication.authManager()
+        conf = QgsAuthMethodConfig()
+        auth_manager.loadAuthenticationConfig(authconf, conf, True)
+        if conf.id():
+            username = conf.config('username', '')
+            password = conf.config('password', '')
+    else:
+        # basic (plain-text) settings
+        username = settings.value('username', '', type=str)
+        password = settings.value('password', '', type=str)
+    
+    return username, password
 
 ## dialog to select the excel file
 file, _filter = QFileDialog.getOpenFileName(None, "Open Data File", '.', "(*.xlsx)")
@@ -58,13 +87,16 @@ def csv_from_excel(arg_xlsx, arg_csv):
     to_csv_file.close()
 
 ## connexion to the server
+myname, mypass = get_postgres_conn_info("connection_name")  # provide here a stored connection name
 try:
-    conn = psycopg2.connect(host="xxx.xxx.xxx.xxx", port="5432", dbname="xxxxxxxxxx", user = xxxxxx) # password stored in .pgpass
+    conn = psycopg2.connect(host="xxx.xxx.xxx.xxx", port="5432", dbname="xxxxxxxxxx", user = myname, password = mypass) 
     cur = conn.cursor()
 except (Exception, psycopg2.Error) as error :
     errmsg = 'The connection failed.' # \( ' + error + ' \)'
     iface.messageBar().pushMessage("Error", errmsg, level=Qgis.Critical, duration=10)
     raise
+
+del mypass. ## deleting the password
 
 ## creating the csv
 nblin = csv_from_excel(file, csvfile)
